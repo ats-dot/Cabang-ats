@@ -159,11 +159,28 @@ class RunnerService : Service() {
             if (z != null) {
                 val awal = dipakai[z]
                 if (awal != null && awal != pkg) {
-                    RunnerState.log("Zone ID $z kembar dengan $awal, menutup $pkg")
-                    if (tutup(pkg)) RunnerState.log("Ditutup: $pkg")
-                    else RunnerState.log("Tidak bisa menutup $pkg, dicoret dari putaran 2")
-                    RunnerState.done++
-                    continue
+                    if (shizukuSiap) {
+                        RunnerState.log("Zone ID $z kembar dengan $awal, tutup $pkg lalu buka ulang")
+                        tutup(pkg)
+                        if (!tidur(1000)) break
+                        if (buka(pkg)) dibuka.add(pkg)
+                        if (!tidur(d1)) break
+                        val baru = bacaZona(pkg)
+                        if (baru != null) {
+                            z = baru
+                            RunnerState.log("$pkg : Zone ID setelah buka ulang $baru")
+                        } else {
+                            RunnerState.log("$pkg : Zone ID setelah buka ulang belum terbaca")
+                        }
+                    }
+                    val cek = if (z != null) dipakai[z] else null
+                    if (z == null || (cek != null && cek != pkg)) {
+                        RunnerState.log("Zone ID $z masih kembar, menutup $pkg")
+                        if (tutup(pkg)) RunnerState.log("Ditutup: $pkg")
+                        else RunnerState.log("Tidak bisa menutup $pkg, dicoret dari putaran 2")
+                        RunnerState.done++
+                        continue
+                    }
                 }
                 dipakai[z] = pkg
                 zona[pkg] = z
