@@ -21,6 +21,7 @@ class FileService : IFileService.Stub() {
             val dir = File("/storage/emulated/0/Android/data/$pkg/files/Flog")
             val file = dir.listFiles { f -> f.isFile && f.name.endsWith(".log") }
                 ?.maxByOrNull { it.lastModified() } ?: return ""
+            val waktu = file.lastModified()
             val len = file.length()
             val maks = 200_000L
             val mulai = if (len > maks) len - maks else 0L
@@ -28,7 +29,7 @@ class FileService : IFileService.Stub() {
                 raf.seek(mulai)
                 val buf = ByteArray((len - mulai).toInt())
                 raf.readFully(buf)
-                String(buf, Charsets.UTF_8)
+                "MTIME:" + waktu + "\n" + String(buf, Charsets.UTF_8)
             }
         } catch (e: Exception) {
             ""
