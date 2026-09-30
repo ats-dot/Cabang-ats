@@ -17,6 +17,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -72,6 +73,8 @@ object RunnerState {
     }
 }
 
+internal class Snap(val mtime: Long, val jumlah: Int, val zona: String?)
+
 class RunnerService : Service() {
 
     private val main = Handler(Looper.getMainLooper())
@@ -80,7 +83,9 @@ class RunnerService : Service() {
     private var latch = CountDownLatch(1)
     private var titik: View? = null
     private var kapsul: TextView? = null
+    private var gagalBuka = false
     private val polaZona = Regex("iZoneId:\\s*(\\d+)")
+    private val polaMtime = Regex("MTIME:(\\d+)")
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -141,51 +146,69 @@ class RunnerService : Service() {
         val dipakai = HashMap<String, String>()
         val sisa = ArrayList<String>()
 
+        fun kembar(z: String?, pkg: String): Boolean {
+            if (z == null) return false
+            val o = dipakai[z]
+            return o != null && o != pkg
+        }
+
         RunnerState.fase = "Putaran 1"
         RunnerState.total = pkgs.size
         RunnerState.done = 0
 
         for ((i, pkg) in pkgs.withIndex()) {
             if (RunnerState.stop) break
-            if (buka(pkg)) dibuka.add(pkg)
-            if (!tidur(d1)) break
 
-            var z: String? = if (shizukuSiap) bacaZona(pkg) else null
+            var z: String? = null
+            gagalBuka = false
+
+            if (shizukuSiap) {
+                // Percobaan 1
+                z = bukaDanBaca(pkg, d1, dibuka)
+                if (RunnerState.stop) break
+                if (gagalBuka) {
+                    RunnerState.done++
+                    continue
+                }
+                if (z == null || kembar(z, pkg)) {
+                    if (z == null) {
+                        RunnerState.log("$pkg : Zone ID belum terbaca (percobaan 1), tutup lalu buka ulang")
+                    } else {
+                        RunnerState.log("$pkg : Zone ID $z kembar dengan ${dipakai[z]} (percobaan 1), tutup lalu buka ulang")
+                    }
+                    // Percobaan 2
+                    z = ulang(pkg, d1, dibuka)
+                    if (RunnerState.stop) break
+                    if (z != null) RunnerState.log("$pkg : Zone ID percobaan 2 = $z")
+                }
+            } else {
+                if (buka(pkg)) dibuka.add(pkg)
+                if (!tidur(d1)) break
+            }
+
             if (z == null) {
                 val m = manual.getOrNull(i)?.trim().orEmpty()
                 if (m.isNotEmpty()) z = m
             }
 
-            if (z != null) {
-                val awal = dipakai[z]
-                if (awal != null && awal != pkg) {
-                    if (shizukuSiap) {
-                        RunnerState.log("Zone ID $z kembar dengan $awal, tutup $pkg lalu buka ulang")
-                        tutup(pkg)
-                        if (!tidur(1000)) break
-                        if (buka(pkg)) dibuka.add(pkg)
-                        if (!tidur(d1)) break
-                        val baru = bacaZona(pkg)
-                        if (baru != null) {
-                            z = baru
-                            RunnerState.log("$pkg : Zone ID setelah buka ulang $baru")
-                        } else {
-                            RunnerState.log("$pkg : Zone ID setelah buka ulang belum terbaca")
-                        }
-                    }
-                    val cek = if (z != null) dipakai[z] else null
-                    if (z == null || (cek != null && cek != pkg)) {
-                        RunnerState.log("Zone ID $z masih kembar, menutup $pkg")
-                        if (tutup(pkg)) RunnerState.log("Ditutup: $pkg")
-                        else RunnerState.log("Tidak bisa menutup $pkg, dicoret dari putaran 2")
-                        RunnerState.done++
-                        continue
-                    }
+            val akhir: String? = z
+            val buang = kembar(akhir, pkg) || (akhir == null && shizukuSiap)
+            if (buang) {
+                if (akhir == null) {
+                    RunnerState.log("$pkg : Zone ID tetap tidak terbaca setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
+                } else {
+                    RunnerState.log("$pkg : Zone ID $akhir tetap kembar setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
                 }
-                dipakai[z] = pkg
-                zona[pkg] = z
-                RunnerState.zona(pkg, z)
-                RunnerState.log("$pkg : Zone ID $z")
+                if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
+                RunnerState.done++
+                continue
+            }
+
+            if (akhir != null) {
+                dipakai[akhir] = pkg
+                zona[pkg] = akhir
+                RunnerState.zona(pkg, akhir)
+                RunnerState.log("$pkg : Zone ID $akhir")
             } else {
                 RunnerState.log("$pkg : Zone ID belum terbaca")
             }
@@ -194,6 +217,16 @@ class RunnerService : Service() {
         }
 
         if (!RunnerState.stop) {
+            if (shizukuSiap) {
+                for (pkg in sisa) {
+                    val zb = snap(pkg)?.zona
+                    if (zb != null && zb != zona[pkg]) {
+                        RunnerState.log("$pkg : Zone ID berubah ${zona[pkg]} -> $zb")
+                        zona[pkg] = zb
+                        RunnerState.zona(pkg, zb)
+                    }
+                }
+            }
             val terbaca = sisa.filter { zona.containsKey(it) }
                 .sortedBy { zona[it]!!.toLongOrNull() ?: Long.MAX_VALUE }
             val belum = sisa.filter { !zona.containsKey(it) }
@@ -202,6 +235,7 @@ class RunnerService : Service() {
             RunnerState.fase = "Putaran 2"
             RunnerState.total = urut.size
             RunnerState.done = 0
+            RunnerState.log("Urutan putaran 2: " + urut.joinToString(", ") { (zona[it] ?: "?") })
             for (pkg in urut) {
                 if (RunnerState.stop) break
                 if (buka(pkg)) dibuka.add(pkg)
@@ -220,6 +254,52 @@ class RunnerService : Service() {
             tampilKapsul("Selesai · ${dibuka.size} app dibuka")
             tidur(2800)
         }
+    }
+
+    private fun bukaDanBaca(pkg: String, batas: Long, dibuka: MutableSet<String>): String? {
+        val awal = snap(pkg)
+        if (buka(pkg)) {
+            dibuka.add(pkg)
+        } else {
+            gagalBuka = true
+            return null
+        }
+        return tungguZona(pkg, batas, awal)
+    }
+
+    private fun ulang(pkg: String, batas: Long, dibuka: MutableSet<String>): String? {
+        tutup(pkg)
+        if (!tidur(1000)) return null
+        return bukaDanBaca(pkg, batas, dibuka)
+    }
+
+    private fun snap(pkg: String): Snap? {
+        return try {
+            val teks = fs?.readLatestLog(pkg) ?: return null
+            if (teks.isEmpty()) return null
+            val m = polaMtime.find(teks)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+            val semua = polaZona.findAll(teks).map { it.groupValues[1] }.toList()
+            Snap(m, semua.size, semua.lastOrNull())
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun tungguZona(pkg: String, batas: Long, awal: Snap?): String? {
+        val mulai = SystemClock.elapsedRealtime()
+        var cadangan: String? = null
+        while (SystemClock.elapsedRealtime() - mulai < batas) {
+            if (RunnerState.stop) return null
+            val s = snap(pkg)
+            if (s != null && s.zona != null) {
+                val baru = awal == null ||
+                    (s.mtime > awal.mtime && (s.jumlah != awal.jumlah || s.zona != awal.zona))
+                if (baru) return s.zona
+                if (awal != null && s.mtime > awal.mtime) cadangan = s.zona
+            }
+            if (!tidur(200)) return null
+        }
+        return cadangan
     }
 
     private fun buka(pkg: String): Boolean {
@@ -244,16 +324,6 @@ class RunnerService : Service() {
             fs?.forceStop(pkg) ?: false
         } catch (e: Exception) {
             false
-        }
-    }
-
-    private fun bacaZona(pkg: String): String? {
-        return try {
-            val teks = fs?.readLatestLog(pkg) ?: return null
-            if (teks.isEmpty()) return null
-            polaZona.findAll(teks).lastOrNull()?.groupValues?.get(1)
-        } catch (e: Exception) {
-            null
         }
     }
 
