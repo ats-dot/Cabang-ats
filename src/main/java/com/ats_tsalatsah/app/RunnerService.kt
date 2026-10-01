@@ -89,6 +89,7 @@ class RunnerService : Service() {
     private val polaZona = Regex("iZoneId:\\s*(\\d+)")
     private val polaMtime = Regex("MTIME:(\\d+)")
     private val zonaAwal = 57092L
+    private val jedaHome = 500L
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -298,9 +299,11 @@ class RunnerService : Service() {
                 RunnerState.log("$pkg : Zone ID $z kembar dengan $pemilik, ditutup")
             }
             if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
-            return null
         }
 
+        if (!tidur(jedaHome)) return null
+
+        if (gagal || kembar) return null
         return z
     }
 
@@ -313,7 +316,10 @@ class RunnerService : Service() {
         dibuka.add(pkg)
 
         if (!tidur(d2)) return
-        if (!terakhir) home()
+        if (!terakhir) {
+            home()
+            tidur(jedaHome)
+        }
     }
 
     private fun infoBolong(zona: Map<String, String>, target: Int) {
