@@ -6,4 +6,6 @@ interface IFileService {
     String readLatestLog(String pkg) = 1;
 
     boolean forceStop(String pkg) = 2;
+
+    String topPackage() = 3;
 }
