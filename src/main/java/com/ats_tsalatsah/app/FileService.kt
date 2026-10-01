@@ -7,6 +7,8 @@ class FileService : IFileService.Stub() {
 
     private val prefix = "com.revanstor"
     private val aman = Regex("[A-Za-z0-9._]+")
+    private val polaTop = Regex("topResumedActivity=ActivityRecord\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
+    private val polaFokus = Regex("mCurrentFocus=Window\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
 
     private fun paketBoleh(pkg: String): Boolean =
         pkg.startsWith(prefix) && aman.matches(pkg)
@@ -43,6 +45,40 @@ class FileService : IFileService.Stub() {
             p.waitFor() == 0
         } catch (e: Exception) {
             false
+        }
+    }
+
+    override fun topPackage(): String {
+        var hasil = cari(arrayOf("dumpsys", "activity", "activities"), polaTop)
+        if (hasil.isEmpty()) {
+            hasil = cari(arrayOf("dumpsys", "window"), polaFokus)
+        }
+        return if (hasil.startsWith(prefix) && aman.matches(hasil)) hasil else ""
+    }
+
+    private fun cari(cmd: Array<String>, pola: Regex): String {
+        var p: Process? = null
+        return try {
+            p = Runtime.getRuntime().exec(cmd)
+            var hasil = ""
+            p.inputStream.bufferedReader().use { r ->
+                while (true) {
+                    val baris = r.readLine() ?: break
+                    val m = pola.find(baris)
+                    if (m != null) {
+                        hasil = m.groupValues[1]
+                        break
+                    }
+                }
+            }
+            hasil
+        } catch (e: Exception) {
+            ""
+        } finally {
+            try {
+                p?.destroy()
+            } catch (e: Exception) {
+            }
         }
     }
 }
