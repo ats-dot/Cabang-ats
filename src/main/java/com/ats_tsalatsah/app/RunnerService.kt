@@ -83,11 +83,13 @@ class RunnerService : Service() {
     private var args: Shizuku.UserServiceArgs? = null
     private var latch = CountDownLatch(1)
     private var titik: View? = null
+    private var tirai: View? = null
     private var kapsul: TextView? = null
-    private var gagalBuka = false
     private var alasan = ""
     private val polaZona = Regex("iZoneId:\\s*(\\d+)")
     private val polaMtime = Regex("MTIME:(\\d+)")
+    private val zonaAwal = 57092L
+    private val batasPindah = 3000L
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -112,18 +114,20 @@ class RunnerService : Service() {
         if (intent == null || RunnerState.running) return START_NOT_STICKY
 
         val pkgs = intent.getStringArrayExtra("pkgs")?.toList() ?: emptyList()
-        val d1 = intent.getLongExtra("d1", 5000L)
-        val d2 = intent.getLongExtra("d2", 7000L)
+        val d1 = intent.getLongExtra("d1", 5520L)
+        val d2 = intent.getLongExtra("d2", 5300L)
         val kembali = intent.getBooleanExtra("back", true)
+        val target = intent.getIntExtra("target", 0)
 
         RunnerState.reset()
         RunnerState.running = true
         Thread {
             try {
-                jalankan(pkgs, d1, d2, kembali)
+                jalankan(pkgs, d1, d2, kembali, target)
             } catch (e: Throwable) {
                 RunnerState.log("Error: " + e.message)
             } finally {
+                hapusTirai()
                 RunnerState.running = false
                 if (RunnerState.fase.startsWith("Putaran")) RunnerState.fase = "Berhenti"
                 stopForeground(STOP_FOREGROUND_REMOVE)
@@ -133,8 +137,9 @@ class RunnerService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun jalankan(pkgs: List<String>, d1: Long, d2: Long, kembali: Boolean) {
-        RunnerState.log("Mulai: ${pkgs.size} aplikasi, jeda 1 = $d1 ms, jeda 2 = $d2 ms")
+    private fun jalankan(pkgs: List<String>, d1: Long, d2: Long, kembali: Boolean, targetIn: Int) {
+        val target = if (targetIn <= 0 || targetIn > pkgs.size) pkgs.size else targetIn
+        RunnerState.log("Mulai: target $target server dari ${pkgs.size} apk cadangan, jeda 1 = $d1 ms, jeda 2 = $d2 ms")
         pasangTitik()
 
         if (!sambungShizuku()) {
@@ -152,79 +157,43 @@ class RunnerService : Service() {
         val dipakai = HashMap<String, String>()
         val sisa = ArrayList<String>()
 
-        fun kembar(z: String?, pkg: String): Boolean {
-            if (z == null) return false
-            val o = dipakai[z]
-            return o != null && o != pkg
-        }
-
         RunnerState.fase = "Putaran 1"
-        RunnerState.total = pkgs.size
+        RunnerState.total = target
         RunnerState.done = 0
 
         for (pkg in pkgs) {
             if (RunnerState.stop) break
+            if (sisa.size >= target) break
 
-            gagalBuka = false
-
-            // Percobaan 1
-            var z: String? = bukaDanBaca(pkg, d1, dibuka)
+            val z = cobaApk(pkg, d1, dipakai, dibuka)
             if (RunnerState.stop) break
-            if (gagalBuka) {
-                RunnerState.done++
-                continue
-            }
 
-            // Percobaan 2: hanya jika tidak terbaca atau kembar; tutup dulu, langsung buka
-            if (z == null || kembar(z, pkg)) {
-                if (z == null) {
-                    RunnerState.log("$pkg : Zone ID belum terbaca (percobaan 1), tutup lalu buka ulang")
-                } else {
-                    RunnerState.log("$pkg : Zone ID $z kembar dengan ${dipakai[z]} (percobaan 1), tutup lalu buka ulang")
-                }
-                z = ulang(pkg, d1, dibuka)
-                if (RunnerState.stop) break
-                if (z != null) RunnerState.log("$pkg : Zone ID percobaan 2 = $z")
+            if (z != null) {
+                dipakai[z] = pkg
+                zona[pkg] = z
+                RunnerState.zona(pkg, z)
+                sisa.add(pkg)
+                RunnerState.done = sisa.size
+                RunnerState.log("$pkg : Zone ID $z (server ${sisa.size}/$target)")
             }
-
-            if (z == null || kembar(z, pkg)) {
-                if (z == null) {
-                    RunnerState.log("$pkg : Zone ID tetap tidak terbaca setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
-                } else {
-                    RunnerState.log("$pkg : Zone ID $z tetap kembar setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
-                }
-                if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
-                RunnerState.done++
-                continue
-            }
-
-            dipakai[z] = pkg
-            zona[pkg] = z
-            RunnerState.zona(pkg, z)
-            RunnerState.log("$pkg : Zone ID $z")
-            sisa.add(pkg)
-            RunnerState.done++
         }
 
         if (!RunnerState.stop) {
-            for (pkg in sisa) {
-                val zb = snap(pkg)?.zona
-                if (zb != null && zb != zona[pkg]) {
-                    RunnerState.log("$pkg : Zone ID berubah ${zona[pkg]} -> $zb")
-                    zona[pkg] = zb
-                    RunnerState.zona(pkg, zb)
-                }
+            if (sisa.size < target) {
+                RunnerState.log("Target $target, tercapai ${sisa.size}. Apk cadangan habis, lanjut ke putaran 2.")
             }
-            val urut = sisa.sortedBy { zona[it]?.toLongOrNull() ?: Long.MAX_VALUE }
+            infoBolong(zona, target)
 
+            val urut = sisa.sortedBy { zona[it]?.toLongOrNull() ?: Long.MAX_VALUE }
             RunnerState.fase = "Putaran 2"
             RunnerState.total = urut.size
             RunnerState.done = 0
-            RunnerState.log("Urutan putaran 2: " + urut.joinToString(", ") { (zona[it] ?: "?") })
+            RunnerState.log("Urutan putaran 2: " + urut.joinToString(", ") { zona[it] ?: "?" })
+
             for (pkg in urut) {
                 if (RunnerState.stop) break
-                if (buka(pkg)) dibuka.add(pkg)
-                if (!tidur(d2)) break
+                pindahPutaran2(pkg, d2, dibuka)
+                if (RunnerState.stop) break
                 RunnerState.done++
             }
         }
@@ -235,30 +204,123 @@ class RunnerService : Service() {
         } else {
             RunnerState.fase = "Selesai"
             RunnerState.log("Selesai, ${dibuka.size} app dibuka")
+            hapusTirai()
             if (kembali) kembaliKeAplikasi()
             tampilKapsul("Selesai · ${dibuka.size} app dibuka")
             tidur(2800)
         }
     }
 
-    private fun bukaDanBaca(pkg: String, batas: Long, dibuka: MutableSet<String>): String? {
+    private fun cobaApk(
+        pkg: String,
+        d1: Long,
+        dipakai: Map<String, String>,
+        dibuka: MutableSet<String>
+    ): String? {
+        gelap()
+        if (RunnerState.stop) return null
+
         val awal = snap(pkg)
-        if (buka(pkg)) {
-            dibuka.add(pkg)
-        } else {
-            gagalBuka = true
+        if (!buka(pkg)) {
+            terang()
             return null
         }
-        return tungguZona(pkg, batas, awal)
+        dibuka.add(pkg)
+
+        val mulai = SystemClock.elapsedRealtime()
+        var tampak = false
+        var z: String? = null
+        var cadangan: String? = null
+
+        while (SystemClock.elapsedRealtime() - mulai < d1) {
+            if (RunnerState.stop) return null
+
+            if (!tampak) {
+                val lewat = SystemClock.elapsedRealtime() - mulai
+                if (puncak() == pkg || lewat >= batasPindah) {
+                    terang()
+                    tampak = true
+                }
+            }
+
+            if (z == null) {
+                val s = snap(pkg)
+                val zz = s?.zona
+                if (s != null && zz != null) {
+                    val baru = awal == null ||
+                        (s.mtime > awal.mtime && (s.jumlah != awal.jumlah || zz != awal.zona))
+                    if (baru) {
+                        z = zz
+                        val o = dipakai[zz]
+                        if (o != null && o != pkg) break
+                    } else if (awal != null && s.mtime > awal.mtime) {
+                        cadangan = zz
+                    }
+                }
+            }
+
+            if (!tidur(200)) return null
+        }
+
+        if (!tampak) terang()
+        if (z == null) z = cadangan
+
+        if (z == null) {
+            RunnerState.log("$pkg : Zone ID tidak terbaca sampai jeda habis, ditutup")
+            if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
+            return null
+        }
+
+        val o = dipakai[z]
+        if (o != null && o != pkg) {
+            RunnerState.log("$pkg : Zone ID $z kembar dengan $o, ditutup")
+            if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
+            return null
+        }
+        return z
     }
 
-    private fun ulang(pkg: String, batas: Long, dibuka: MutableSet<String>): String? {
-        if (!tutup(pkg)) {
-            RunnerState.log("Gagal menutup $pkg, tidak dibuka ulang")
-            return null
+    private fun pindahPutaran2(pkg: String, d2: Long, dibuka: MutableSet<String>) {
+        gelap()
+        if (RunnerState.stop) return
+        if (!buka(pkg)) {
+            terang()
+            tidur(d2)
+            return
         }
-        RunnerState.log("Ditutup: $pkg")
-        return bukaDanBaca(pkg, batas, dibuka)
+        dibuka.add(pkg)
+
+        val mulai = SystemClock.elapsedRealtime()
+        val batas = if (d2 < batasPindah) d2 else batasPindah
+        while (SystemClock.elapsedRealtime() - mulai < batas) {
+            if (RunnerState.stop) return
+            if (puncak() == pkg) break
+            if (!tidur(150)) return
+        }
+        terang()
+
+        val sisaWaktu = d2 - (SystemClock.elapsedRealtime() - mulai)
+        if (sisaWaktu > 0) tidur(sisaWaktu)
+    }
+
+    private fun infoBolong(zona: Map<String, String>, target: Int) {
+        if (target <= 0) return
+        val akhir = zonaAwal + target - 1
+        val ada = zona.values.mapNotNull { it.toLongOrNull() }.toSet()
+        val hilang = (zonaAwal..akhir).filter { it !in ada }
+        if (hilang.isEmpty()) return
+        val luar = ada.filter { it < zonaAwal || it > akhir }.sorted()
+        var teks = "Urutan $zonaAwal-$akhir tidak penuh. Tidak dapat: " + hilang.joinToString(", ")
+        if (luar.isNotEmpty()) teks += ". Di luar rentang: " + luar.joinToString(", ")
+        RunnerState.log(teks)
+    }
+
+    private fun puncak(): String {
+        return try {
+            fs?.topPackage() ?: ""
+        } catch (e: Exception) {
+            ""
+        }
     }
 
     private fun snap(pkg: String): Snap? {
@@ -271,23 +333,6 @@ class RunnerService : Service() {
         } catch (e: Exception) {
             null
         }
-    }
-
-    private fun tungguZona(pkg: String, batas: Long, awal: Snap?): String? {
-        val mulai = SystemClock.elapsedRealtime()
-        var cadangan: String? = null
-        while (SystemClock.elapsedRealtime() - mulai < batas) {
-            if (RunnerState.stop) return null
-            val s = snap(pkg)
-            if (s != null && s.zona != null) {
-                val baru = awal == null ||
-                    (s.mtime > awal.mtime && (s.jumlah != awal.jumlah || s.zona != awal.zona))
-                if (baru) return s.zona
-                if (awal != null && s.mtime > awal.mtime) cadangan = s.zona
-            }
-            if (!tidur(200)) return null
-        }
-        return cadangan
     }
 
     private fun buka(pkg: String): Boolean {
@@ -343,7 +388,7 @@ class RunnerService : Service() {
             val a = Shizuku.UserServiceArgs(ComponentName(packageName, FileService::class.java.name))
                 .daemon(false)
                 .processNameSuffix("file")
-                .version(1)
+                .version(2)
             args = a
             latch = CountDownLatch(1)
             Shizuku.bindUserService(a, conn)
@@ -382,6 +427,68 @@ class RunnerService : Service() {
     private fun wm(): WindowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+
+    private fun gelap() {
+        if (!Settings.canDrawOverlays(this)) return
+        main.post {
+            try {
+                var v = tirai
+                if (v == null) {
+                    v = View(this)
+                    v.setBackgroundColor(Color.BLACK)
+                    v.alpha = 0f
+                    val lp = WindowManager.LayoutParams(
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.MATCH_PARENT,
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                        PixelFormat.TRANSLUCENT
+                    )
+                    if (Build.VERSION.SDK_INT >= 28) {
+                        lp.layoutInDisplayCutoutMode =
+                            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                    }
+                    wm().addView(v, lp)
+                    tirai = v
+                }
+                v.animate().cancel()
+                v.animate().alpha(1f).setDuration(250).start()
+            } catch (e: Exception) {
+            }
+        }
+        tidur(300)
+    }
+
+    private fun terang() {
+        main.post {
+            try {
+                val v = tirai
+                if (v != null) {
+                    v.animate().cancel()
+                    v.animate().alpha(0f).setDuration(300).start()
+                }
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    private fun hapusTirai() {
+        val kerja = Runnable {
+            val v = tirai
+            tirai = null
+            if (v != null) {
+                try {
+                    v.animate().cancel()
+                    wm().removeView(v)
+                } catch (e: Exception) {
+                }
+            }
+        }
+        if (Looper.myLooper() == Looper.getMainLooper()) kerja.run() else main.post(kerja)
+    }
 
     private fun pasangTitik() {
         if (!Settings.canDrawOverlays(this)) {
@@ -478,6 +585,7 @@ class RunnerService : Service() {
 
     override fun onDestroy() {
         hapusKapsul()
+        hapusTirai()
         hapusTitik()
         try {
             val a = args
