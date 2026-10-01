@@ -352,6 +352,21 @@ class RunnerService : Service() {
             RunnerState.log("Tidak bisa membuka $pkg")
             return false
         }
+
+        val komp = i.component?.flattenToShortString()
+        if (komp != null) {
+            val ok = try {
+                fs?.startApp(komp) ?: false
+            } catch (e: Exception) {
+                false
+            }
+            if (ok) {
+                RunnerState.log("Buka $pkg")
+                return true
+            }
+            RunnerState.log("Shizuku gagal membuka $pkg, pakai cara cadangan")
+        }
+
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try {
             startActivity(i)
@@ -410,7 +425,7 @@ class RunnerService : Service() {
             val a = Shizuku.UserServiceArgs(ComponentName(packageName, FileService::class.java.name))
                 .daemon(false)
                 .processNameSuffix("file")
-                .version(3)
+                .version(4)
             args = a
             latch = CountDownLatch(1)
             Shizuku.bindUserService(a, conn)
