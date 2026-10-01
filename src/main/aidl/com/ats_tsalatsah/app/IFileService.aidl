@@ -8,4 +8,8 @@ interface IFileService {
     boolean forceStop(String pkg) = 2;
 
     String topPackage() = 3;
+
+    String getAnim() = 4;
+
+    boolean setAnim(String nilai) = 5;
 }
