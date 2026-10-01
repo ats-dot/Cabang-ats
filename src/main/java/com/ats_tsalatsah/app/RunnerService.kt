@@ -175,7 +175,7 @@ class RunnerService : Service() {
                 continue
             }
 
-            // Percobaan 2: hanya jika tidak terbaca atau kembar; tutup dulu, baru buka
+            // Percobaan 2: hanya jika tidak terbaca atau kembar; tutup dulu, langsung buka
             if (z == null || kembar(z, pkg)) {
                 if (z == null) {
                     RunnerState.log("$pkg : Zone ID belum terbaca (percobaan 1), tutup lalu buka ulang")
@@ -258,7 +258,6 @@ class RunnerService : Service() {
             return null
         }
         RunnerState.log("Ditutup: $pkg")
-        if (!tidur(1000)) return null
         return bukaDanBaca(pkg, batas, dibuka)
     }
 
