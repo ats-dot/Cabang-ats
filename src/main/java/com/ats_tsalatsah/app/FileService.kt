@@ -7,6 +7,7 @@ class FileService : IFileService.Stub() {
 
     private val prefix = "com.revanstor"
     private val aman = Regex("[A-Za-z0-9._]+")
+    private val amanKomponen = Regex("[A-Za-z0-9._$]+/[A-Za-z0-9._$]+")
     private val polaTop = Regex("topResumedActivity=ActivityRecord\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
     private val polaFokus = Regex("mCurrentFocus=Window\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
     private val polaAnim = Regex("^(null|[0-9]+(\\.[0-9]+)?)$")
@@ -47,6 +48,24 @@ class FileService : IFileService.Stub() {
             p.waitFor() == 0
         } catch (e: Exception) {
             false
+        }
+    }
+
+    override fun startApp(komponen: String): Boolean {
+        if (!komponen.startsWith(prefix) || !amanKomponen.matches(komponen)) return false
+        var p: Process? = null
+        return try {
+            p = Runtime.getRuntime().exec(arrayOf("am", "start", "-n", komponen))
+            val teks = p.inputStream.bufferedReader().use { it.readText() }
+            val kode = p.waitFor()
+            kode == 0 && !teks.contains("Error")
+        } catch (e: Exception) {
+            false
+        } finally {
+            try {
+                p?.destroy()
+            } catch (e: Exception) {
+            }
         }
     }
 
