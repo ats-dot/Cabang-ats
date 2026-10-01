@@ -9,6 +9,8 @@ class FileService : IFileService.Stub() {
     private val aman = Regex("[A-Za-z0-9._]+")
     private val polaTop = Regex("topResumedActivity=ActivityRecord\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
     private val polaFokus = Regex("mCurrentFocus=Window\\{[^ ]+ u\\d+ ([A-Za-z0-9._]+)/")
+    private val polaAnim = Regex("^(null|[0-9]+(\\.[0-9]+)?)$")
+    private val kunciAnim = arrayOf("window_animation_scale", "transition_animation_scale")
 
     private fun paketBoleh(pkg: String): Boolean =
         pkg.startsWith(prefix) && aman.matches(pkg)
@@ -54,6 +56,65 @@ class FileService : IFileService.Stub() {
             hasil = cari(arrayOf("dumpsys", "window"), polaFokus)
         }
         return if (hasil.startsWith(prefix) && aman.matches(hasil)) hasil else ""
+    }
+
+    override fun getAnim(): String {
+        val hasil = ArrayList<String>()
+        for (k in kunciAnim) {
+            val v = baca(arrayOf("settings", "get", "global", k))
+            hasil.add(if (polaAnim.matches(v)) v else "null")
+        }
+        return hasil.joinToString("|")
+    }
+
+    override fun setAnim(nilai: String): Boolean {
+        val bagian = nilai.split("|")
+        if (bagian.size != kunciAnim.size) return false
+        for (b in bagian) {
+            if (!polaAnim.matches(b)) return false
+        }
+        var ok = true
+        for (i in kunciAnim.indices) {
+            val cmd = if (bagian[i] == "null") {
+                arrayOf("settings", "delete", "global", kunciAnim[i])
+            } else {
+                arrayOf("settings", "put", "global", kunciAnim[i], bagian[i])
+            }
+            if (!jalan(cmd)) ok = false
+        }
+        return ok
+    }
+
+    private fun baca(cmd: Array<String>): String {
+        var p: Process? = null
+        return try {
+            p = Runtime.getRuntime().exec(cmd)
+            val teks = p.inputStream.bufferedReader().use { it.readText() }
+            p.waitFor()
+            teks.trim()
+        } catch (e: Exception) {
+            ""
+        } finally {
+            try {
+                p?.destroy()
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    private fun jalan(cmd: Array<String>): Boolean {
+        var p: Process? = null
+        return try {
+            p = Runtime.getRuntime().exec(cmd)
+            p.waitFor() == 0
+        } catch (e: Exception) {
+            false
+        } finally {
+            try {
+                p?.destroy()
+            } catch (e: Exception) {
+            }
+        }
     }
 
     private fun cari(cmd: Array<String>, pola: Regex): String {
