@@ -86,6 +86,7 @@ class RunnerService : Service() {
     private var tirai: View? = null
     private var kapsul: TextView? = null
     private var alasan = ""
+    private var animLama: String? = null
     private val polaZona = Regex("iZoneId:\\s*(\\d+)")
     private val polaMtime = Regex("MTIME:(\\d+)")
     private val zonaAwal = 57092L
@@ -127,6 +128,7 @@ class RunnerService : Service() {
             } catch (e: Throwable) {
                 RunnerState.log("Error: " + e.message)
             } finally {
+                pulihkanAnim()
                 hapusTirai()
                 RunnerState.running = false
                 if (RunnerState.fase.startsWith("Putaran")) RunnerState.fase = "Berhenti"
@@ -151,6 +153,7 @@ class RunnerService : Service() {
             return
         }
         RunnerState.log("Shizuku tersambung")
+        matikanAnim()
 
         val dibuka = LinkedHashSet<String>()
         val zona = HashMap<String, String>()
@@ -208,6 +211,41 @@ class RunnerService : Service() {
             if (kembali) kembaliKeAplikasi()
             tampilKapsul("Selesai · ${dibuka.size} app dibuka")
             tidur(2800)
+        }
+    }
+
+    private fun matikanAnim() {
+        try {
+            val lama = fs?.getAnim()
+            if (lama == null) {
+                RunnerState.log("Animasi sistem tidak bisa dibaca, dilewati")
+                return
+            }
+            animLama = lama
+            val ok = fs?.setAnim("0|0") ?: false
+            if (ok) {
+                RunnerState.log("Animasi sistem dimatikan sementara")
+            } else {
+                RunnerState.log("Gagal mematikan animasi sistem")
+            }
+            tidur(200)
+        } catch (e: Exception) {
+            RunnerState.log("Gagal mematikan animasi sistem")
+        }
+    }
+
+    private fun pulihkanAnim() {
+        val a = animLama ?: return
+        animLama = null
+        try {
+            val ok = fs?.setAnim(a) ?: false
+            if (ok) {
+                RunnerState.log("Animasi sistem dikembalikan")
+            } else {
+                RunnerState.log("PERINGATAN: animasi sistem gagal dikembalikan")
+            }
+        } catch (e: Exception) {
+            RunnerState.log("PERINGATAN: animasi sistem gagal dikembalikan")
         }
     }
 
@@ -388,7 +426,7 @@ class RunnerService : Service() {
             val a = Shizuku.UserServiceArgs(ComponentName(packageName, FileService::class.java.name))
                 .daemon(false)
                 .processNameSuffix("file")
-                .version(2)
+                .version(3)
             args = a
             latch = CountDownLatch(1)
             Shizuku.bindUserService(a, conn)
