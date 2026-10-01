@@ -12,4 +12,6 @@ interface IFileService {
     String getAnim() = 4;
 
     boolean setAnim(String nilai) = 5;
+
+    boolean startApp(String komponen) = 6;
 }
