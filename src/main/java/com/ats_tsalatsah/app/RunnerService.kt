@@ -23,6 +23,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import rikka.shizuku.Shizuku
@@ -84,6 +85,7 @@ class RunnerService : Service() {
     private var titik: View? = null
     private var kapsul: TextView? = null
     private var gagalBuka = false
+    private var alasan = ""
     private val polaZona = Regex("iZoneId:\\s*(\\d+)")
     private val polaMtime = Regex("MTIME:(\\d+)")
 
@@ -110,7 +112,6 @@ class RunnerService : Service() {
         if (intent == null || RunnerState.running) return START_NOT_STICKY
 
         val pkgs = intent.getStringArrayExtra("pkgs")?.toList() ?: emptyList()
-        val manual = intent.getStringArrayExtra("zones")?.toList() ?: emptyList()
         val d1 = intent.getLongExtra("d1", 5000L)
         val d2 = intent.getLongExtra("d2", 7000L)
         val kembali = intent.getBooleanExtra("back", true)
@@ -119,7 +120,7 @@ class RunnerService : Service() {
         RunnerState.running = true
         Thread {
             try {
-                jalankan(pkgs, manual, d1, d2, kembali)
+                jalankan(pkgs, d1, d2, kembali)
             } catch (e: Throwable) {
                 RunnerState.log("Error: " + e.message)
             } finally {
@@ -132,14 +133,19 @@ class RunnerService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun jalankan(pkgs: List<String>, manual: List<String>, d1: Long, d2: Long, kembali: Boolean) {
+    private fun jalankan(pkgs: List<String>, d1: Long, d2: Long, kembali: Boolean) {
         RunnerState.log("Mulai: ${pkgs.size} aplikasi, jeda 1 = $d1 ms, jeda 2 = $d2 ms")
         pasangTitik()
-        val shizukuSiap = sambungShizuku()
-        RunnerState.log(
-            if (shizukuSiap) "Shizuku tersambung"
-            else "Shizuku belum siap, memakai Zone ID manual"
-        )
+
+        if (!sambungShizuku()) {
+            RunnerState.fase = "Shizuku belum siap"
+            RunnerState.log("PERINGATAN: $alasan. Proses dibatalkan, tidak ada apk yang dibuka.")
+            if (kembali) kembaliKeAplikasi()
+            peringatan("Shizuku belum tersambung: $alasan")
+            tidur(3000)
+            return
+        }
+        RunnerState.log("Shizuku tersambung")
 
         val dibuka = LinkedHashSet<String>()
         val zona = HashMap<String, String>()
@@ -156,81 +162,60 @@ class RunnerService : Service() {
         RunnerState.total = pkgs.size
         RunnerState.done = 0
 
-        for ((i, pkg) in pkgs.withIndex()) {
+        for (pkg in pkgs) {
             if (RunnerState.stop) break
 
-            var z: String? = null
             gagalBuka = false
 
-            if (shizukuSiap) {
-                // Percobaan 1
-                z = bukaDanBaca(pkg, d1, dibuka)
+            // Percobaan 1
+            var z: String? = bukaDanBaca(pkg, d1, dibuka)
+            if (RunnerState.stop) break
+            if (gagalBuka) {
+                RunnerState.done++
+                continue
+            }
+
+            // Percobaan 2: hanya jika tidak terbaca atau kembar; tutup dulu, baru buka
+            if (z == null || kembar(z, pkg)) {
+                if (z == null) {
+                    RunnerState.log("$pkg : Zone ID belum terbaca (percobaan 1), tutup lalu buka ulang")
+                } else {
+                    RunnerState.log("$pkg : Zone ID $z kembar dengan ${dipakai[z]} (percobaan 1), tutup lalu buka ulang")
+                }
+                z = ulang(pkg, d1, dibuka)
                 if (RunnerState.stop) break
-                if (gagalBuka) {
-                    RunnerState.done++
-                    continue
-                }
-                if (z == null || kembar(z, pkg)) {
-                    if (z == null) {
-                        RunnerState.log("$pkg : Zone ID belum terbaca (percobaan 1), tutup lalu buka ulang")
-                    } else {
-                        RunnerState.log("$pkg : Zone ID $z kembar dengan ${dipakai[z]} (percobaan 1), tutup lalu buka ulang")
-                    }
-                    // Percobaan 2
-                    z = ulang(pkg, d1, dibuka)
-                    if (RunnerState.stop) break
-                    if (z != null) RunnerState.log("$pkg : Zone ID percobaan 2 = $z")
-                }
-            } else {
-                if (buka(pkg)) dibuka.add(pkg)
-                if (!tidur(d1)) break
+                if (z != null) RunnerState.log("$pkg : Zone ID percobaan 2 = $z")
             }
 
-            if (z == null) {
-                val m = manual.getOrNull(i)?.trim().orEmpty()
-                if (m.isNotEmpty()) z = m
-            }
-
-            val akhir: String? = z
-            val buang = kembar(akhir, pkg) || (akhir == null && shizukuSiap)
-            if (buang) {
-                if (akhir == null) {
+            if (z == null || kembar(z, pkg)) {
+                if (z == null) {
                     RunnerState.log("$pkg : Zone ID tetap tidak terbaca setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
                 } else {
-                    RunnerState.log("$pkg : Zone ID $akhir tetap kembar setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
+                    RunnerState.log("$pkg : Zone ID $z tetap kembar setelah 2 percobaan, ditutup dan dicoret dari putaran 2")
                 }
                 if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
                 RunnerState.done++
                 continue
             }
 
-            if (akhir != null) {
-                dipakai[akhir] = pkg
-                zona[pkg] = akhir
-                RunnerState.zona(pkg, akhir)
-                RunnerState.log("$pkg : Zone ID $akhir")
-            } else {
-                RunnerState.log("$pkg : Zone ID belum terbaca")
-            }
+            dipakai[z] = pkg
+            zona[pkg] = z
+            RunnerState.zona(pkg, z)
+            RunnerState.log("$pkg : Zone ID $z")
             sisa.add(pkg)
             RunnerState.done++
         }
 
         if (!RunnerState.stop) {
-            if (shizukuSiap) {
-                for (pkg in sisa) {
-                    val zb = snap(pkg)?.zona
-                    if (zb != null && zb != zona[pkg]) {
-                        RunnerState.log("$pkg : Zone ID berubah ${zona[pkg]} -> $zb")
-                        zona[pkg] = zb
-                        RunnerState.zona(pkg, zb)
-                    }
+            for (pkg in sisa) {
+                val zb = snap(pkg)?.zona
+                if (zb != null && zb != zona[pkg]) {
+                    RunnerState.log("$pkg : Zone ID berubah ${zona[pkg]} -> $zb")
+                    zona[pkg] = zb
+                    RunnerState.zona(pkg, zb)
                 }
             }
-            val terbaca = sisa.filter { zona.containsKey(it) }
-                .sortedBy { zona[it]!!.toLongOrNull() ?: Long.MAX_VALUE }
-            val belum = sisa.filter { !zona.containsKey(it) }
-            val urut = terbaca + belum
+            val urut = sisa.sortedBy { zona[it]?.toLongOrNull() ?: Long.MAX_VALUE }
 
             RunnerState.fase = "Putaran 2"
             RunnerState.total = urut.size
@@ -268,7 +253,11 @@ class RunnerService : Service() {
     }
 
     private fun ulang(pkg: String, batas: Long, dibuka: MutableSet<String>): String? {
-        tutup(pkg)
+        if (!tutup(pkg)) {
+            RunnerState.log("Gagal menutup $pkg, tidak dibuka ulang")
+            return null
+        }
+        RunnerState.log("Ditutup: $pkg")
         if (!tidur(1000)) return null
         return bukaDanBaca(pkg, batas, dibuka)
     }
@@ -344,8 +333,14 @@ class RunnerService : Service() {
 
     private fun sambungShizuku(): Boolean {
         return try {
-            if (!Shizuku.pingBinder()) return false
-            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) return false
+            if (!Shizuku.pingBinder()) {
+                alasan = "Shizuku belum jalan, nyalakan dulu"
+                return false
+            }
+            if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
+                alasan = "izin Shizuku belum diberikan"
+                return false
+            }
             val a = Shizuku.UserServiceArgs(ComponentName(packageName, FileService::class.java.name))
                 .daemon(false)
                 .processNameSuffix("file")
@@ -354,10 +349,26 @@ class RunnerService : Service() {
             latch = CountDownLatch(1)
             Shizuku.bindUserService(a, conn)
             latch.await(6, TimeUnit.SECONDS)
-            fs != null
+            if (fs == null) {
+                alasan = "gagal tersambung ke layanan Shizuku"
+                false
+            } else {
+                true
+            }
         } catch (e: Throwable) {
+            alasan = "Shizuku error"
             false
         }
+    }
+
+    private fun peringatan(teks: String) {
+        main.post {
+            try {
+                Toast.makeText(applicationContext, teks, Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+            }
+        }
+        tampilKapsul("Shizuku belum tersambung")
     }
 
     private fun kembaliKeAplikasi() {
