@@ -17,24 +17,21 @@ main{flex:1;position:relative;overflow:hidden}
 .tab.on{opacity:1;transform:none;pointer-events:auto}
 .card{background:var(--c1);border:1px solid var(--ln);border-radius:22px;padding:16px;margin-bottom:14px}
 .card h2{margin:0 0 10px;font-size:13px;letter-spacing:.6px;text-transform:uppercase;color:var(--mu);font-weight:600}
-.big{font-size:40px;font-weight:700;margin:2px 0}
 .mu{color:var(--mu)}
-.bar{height:10px;background:var(--c2);border-radius:99px;overflow:hidden;margin:10px 0}
-.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--ac),var(--ac2));border-radius:99px;transition:width .45s ease}
+.ringbox{display:flex;justify-content:center;padding:6px 0 4px}
 .btns{display:flex;gap:10px;flex-wrap:wrap}
 .btn{border:0;background:var(--ac);color:#fff;font:600 15px system-ui,sans-serif;padding:12px 22px;border-radius:99px;transition:transform .15s,opacity .2s}
 .btn.ghost{background:transparent;border:1px solid var(--ln);color:var(--ac2)}
 .btn.sm{padding:8px 14px;font-size:13px}
+.btn.full{flex:1}
 .btn:active{transform:scale(.96)}
 .btn:disabled{opacity:.35}
-input[type=text],input[type=number],input.zn{background:var(--c2);border:1px solid var(--ln);color:var(--tx);border-radius:14px;padding:11px 14px;font:15px system-ui,sans-serif;width:100%;outline:none}
+input[type=text],input[type=number]{background:var(--c2);border:1px solid var(--ln);color:var(--tx);border-radius:14px;padding:11px 14px;font:15px system-ui,sans-serif;width:100%;outline:none}
 input:focus{border-color:var(--ac)}
 .row{display:flex;align-items:center;gap:12px;padding:10px 2px;border-bottom:1px solid var(--ln)}
 .row .nm{flex:1;min-width:0}
 .row .nm b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .nm span{display:block;color:var(--mu);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row input.zn{width:84px;padding:7px 10px;font-size:13px;display:none}
-.row.on input.zn{display:block}
 input[type=checkbox]{appearance:none;-webkit-appearance:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--ln);background:transparent;flex:none;transition:.2s;position:relative}
 input[type=checkbox]:checked{background:var(--ac);border-color:var(--ac)}
 input[type=checkbox]:checked::after{content:"";position:absolute;left:8px;top:3px;width:6px;height:12px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg)}
@@ -43,9 +40,14 @@ input[type=checkbox]:checked::after{content:"";position:absolute;left:8px;top:3p
 .set{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
 .set+.set{border-top:1px solid var(--ln)}
 .lab{font-size:13px;color:var(--mu);margin:10px 0 6px}
+.now{background:var(--c2);border-radius:16px;padding:12px 14px}
+.now small{display:block;color:var(--mu);font-size:12px}
+.now div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:2px}
+.now b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.now em{font-style:normal;font-weight:700;color:var(--ac2)}
 pre{margin:0;white-space:pre-wrap;word-break:break-all;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#CFE0FF}
 #logwrap{max-height:52vh;overflow-y:auto}
-nav{position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;background:rgba(23,43,82,.95);border:1px solid var(--ln);border-radius:30px;padding:6px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+nav{position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom,0px));display:flex;background:rgba(23,43,82,.95);border:1px solid var(--ln);border-radius:30px;padding:6px}
 nav button{flex:1;border:0;background:transparent;color:var(--mu);font:600 12px system-ui,sans-serif;padding:11px 0;border-radius:24px;transition:.25s}
 nav button.on{background:var(--ac);color:#fff}
 #toast{position:fixed;left:50%;bottom:96px;transform:translate(-50%,20px);background:var(--ac);color:#fff;padding:10px 20px;border-radius:99px;font-size:14px;opacity:0;pointer-events:none;transition:.3s;z-index:9}
@@ -67,13 +69,21 @@ nav button.on{background:var(--ac);color:#fff}
 <main>
 <section id="t-cabang" class="tab on">
 <div class="card">
-<h2 id="fase">Siap</h2>
-<div class="big" id="prog">0/0</div>
-<div class="bar"><i id="bar"></i></div>
-<div class="mu" id="ring">0 aplikasi dipilih</div>
+<div class="ringbox">
+<svg width="176" height="176" viewBox="0 0 176 176" role="img" aria-label="Progres server">
+<circle cx="88" cy="88" r="72" fill="none" stroke="#17356B" stroke-width="12"/>
+<circle id="arc" cx="88" cy="88" r="72" fill="none" stroke="#5B9BF0" stroke-width="12" stroke-linecap="round" stroke-dasharray="0 452.4" transform="rotate(-90 88 88)" style="transition:stroke-dasharray .4s ease"/>
+<text id="rt" x="88" y="90" text-anchor="middle" font-size="32" font-weight="700" fill="#EAF1FF" font-family="sans-serif">0/20</text>
+<text id="rf" x="88" y="114" text-anchor="middle" font-size="13" fill="#8FA3C7" font-family="sans-serif">Siap</text>
+</svg>
+</div>
+<div class="mu" id="ring" style="text-align:center;margin-bottom:12px">0 aplikasi dipilih</div>
+<div class="now"><small>Sedang dibuka</small><div><b id="nowp">-</b><em id="nowz"></em></div></div>
+<div class="lab">Target server (Zone ID berbeda)</div>
+<input type="number" id="target" inputmode="numeric" placeholder="mis. 20">
 <div class="btns" style="margin-top:14px">
-<button class="btn" id="btnStart">Mulai</button>
-<button class="btn ghost" id="btnStop" disabled>Hentikan</button>
+<button class="btn full" id="btnStart">Mulai</button>
+<button class="btn ghost full" id="btnStop" disabled>Hentikan</button>
 </div>
 </div>
 <div class="card"><h2>Terakhir</h2><pre id="logmini">Belum ada aktivitas.</pre></div>
@@ -88,7 +98,7 @@ nav button.on{background:var(--ac);color:#fff}
 <button class="btn sm ghost" id="bFilt"></button>
 </div>
 <div class="lab">Pilih N pertama dari daftar di bawah</div>
-<div class="btns"><input type="number" id="nPertama" inputmode="numeric" placeholder="mis. 20" style="width:110px"><button class="btn sm" id="bN">Pilih</button></div>
+<div class="btns"><input type="number" id="nPertama" inputmode="numeric" placeholder="mis. 30" style="width:110px"><button class="btn sm" id="bN">Pilih</button></div>
 <div class="mu" id="jml" style="margin-top:10px">0 dipilih</div>
 </div>
 <div class="card" id="list"></div>
@@ -128,11 +138,14 @@ nav button.on{background:var(--ac);color:#fff}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const K='cabang_otomatis_v1';
-let S={sel:{},zon:{},d1:5000,d2:7000,back:true,filt:'com.revanstor'};
+let S={sel:{},d1:5520,d2:5300,back:true,filt:'com.revanstor',target:20};
 try{Object.assign(S,JSON.parse(localStorage.getItem(K)||'{}'))}catch(e){}
+if(S.d1===5000&&S.d2===7000){S.d1=5520;S.d2=5300}
+delete S.zon;
 function simpan(){try{localStorage.setItem(K,JSON.stringify(S))}catch(e){}}
 const ada=typeof App!=='undefined';
 let apps=[];
+const KEL=452.4;
 
 function toast(t){const e=$('toast');e.textContent=t;e.classList.add('on');setTimeout(()=>e.classList.remove('on'),2200)}
 
@@ -149,23 +162,19 @@ function terpilih(){return apps.filter(a=>S.sel[a.p])}
 function ringkas(){
   const n=terpilih().length;
   $('jml').textContent=n+' dipilih';
-  $('ring').textContent=n+' aplikasi dipilih · jeda '+S.d1+' / '+S.d2+' ms';
+  $('ring').textContent=n+' apk cadangan · jeda '+S.d1+' / '+S.d2+' ms';
 }
 function gambar(){
   $('list').innerHTML=daftar().map(a=>{
     const on=!!S.sel[a.p];
-    return '<div class="row'+(on?' on':'')+'" data-p="'+esc(a.p)+'"><input type="checkbox"'+(on?' checked':'')+'><div class="nm"><b>'+esc(a.n)+'</b><span>'+esc(a.p)+'</span></div><input class="zn" inputmode="numeric" placeholder="Zone" value="'+esc(S.zon[a.p]||'')+'"></div>';
+    return '<div class="row" data-p="'+esc(a.p)+'"><input type="checkbox"'+(on?' checked':'')+'><div class="nm"><b>'+esc(a.n)+'</b><span>'+esc(a.p)+'</span></div></div>';
   }).join('')||'<div class="mu">Tidak ada aplikasi.</div>';
   ringkas();
 }
 $('list').addEventListener('change',e=>{
   if(e.target.type!=='checkbox')return;
-  const row=e.target.closest('.row');S.sel[row.dataset.p]=e.target.checked;
-  row.classList.toggle('on',e.target.checked);simpan();ringkas();
-});
-$('list').addEventListener('input',e=>{
-  if(!e.target.classList.contains('zn'))return;
-  S.zon[e.target.closest('.row').dataset.p]=e.target.value.trim();simpan();
+  S.sel[e.target.closest('.row').dataset.p]=e.target.checked;
+  simpan();ringkas();
 });
 $('list').addEventListener('click',e=>{
   const nm=e.target.closest('.nm');if(!nm)return;
@@ -182,17 +191,22 @@ $('bN').onclick=()=>{
   S.sel={};daftar().slice(0,n).forEach(a=>S.sel[a.p]=true);simpan();gambar();
 };
 
-$('d1').value=S.d1;$('d2').value=S.d2;$('back').checked=!!S.back;$('filt').value=S.filt;$('bFilt').textContent='Filter: '+S.filt;
+$('d1').value=S.d1;$('d2').value=S.d2;$('back').checked=!!S.back;$('filt').value=S.filt;$('target').value=S.target;
+$('bFilt').textContent='Filter: '+S.filt;
 $('d1').onchange=()=>{S.d1=Math.max(0,parseInt($('d1').value)||0);$('d1').value=S.d1;simpan();ringkas()};
 $('d2').onchange=()=>{S.d2=Math.max(0,parseInt($('d2').value)||0);$('d2').value=S.d2;simpan();ringkas()};
 $('back').onchange=()=>{S.back=$('back').checked;simpan()};
 $('filt').onchange=()=>{S.filt=$('filt').value.trim();$('bFilt').textContent='Filter: '+S.filt;simpan()};
+$('target').onchange=()=>{S.target=Math.max(1,parseInt($('target').value)||1);$('target').value=S.target;simpan();ambil()};
 
 $('btnStart').onclick=()=>{
   if(!ada){toast('Buka lewat aplikasi');return}
   const p=terpilih();
   if(!p.length){toast('Pilih aplikasi dulu');return}
-  const r=App.start(JSON.stringify({pkgs:p.map(a=>a.p),zones:p.map(a=>S.zon[a.p]||''),d1:S.d1,d2:S.d2,back:S.back}));
+  const t=Math.max(1,parseInt($('target').value)||1);
+  S.target=t;$('target').value=t;simpan();
+  if(t>p.length)toast('Target '+t+' lebih besar dari apk dipilih ('+p.length+')');
+  const r=App.start(JSON.stringify({pkgs:p.map(a=>a.p),d1:S.d1,d2:S.d2,back:S.back,target:t}));
   if(r!=='ok')toast(r);else setTimeout(ambil,300);
 };
 $('btnStop').onclick=()=>{if(ada){App.stop();toast('Menghentikan...')}};
@@ -202,11 +216,20 @@ $('bShz').onclick=()=>{if(ada)App.shizuku()};
 
 let kunci='';
 function tampil(s){
-  $('fase').textContent=s.fase;
-  $('prog').textContent=s.done+'/'+s.total;
-  $('bar').style.width=(s.total?Math.round(100*s.done/s.total):0)+'%';
+  const tot=(s.running||s.total)?s.total:S.target;
+  const pct=tot?Math.min(1,s.done/tot):0;
+  $('arc').setAttribute('stroke-dasharray',(pct*KEL).toFixed(1)+' '+KEL);
+  $('rt').textContent=s.done+'/'+tot;
+  $('rf').textContent=s.fase;
   $('btnStart').disabled=s.running;
   $('btnStop').disabled=!s.running;
+  let pk='-';
+  for(let i=s.logs.length-1;i>=0;i--){
+    const m=s.logs[i].match(/ Buka (\S+)$/);
+    if(m){pk=m[1];break}
+  }
+  $('nowp').textContent=pk;
+  $('nowz').textContent=(pk!=='-'&&s.zones[pk])?s.zones[pk]:'';
   const k=s.logs.length+'|'+(s.logs[s.logs.length-1]||'');
   if(k!==kunci){
     kunci=k;
@@ -218,7 +241,7 @@ function tampil(s){
   $('zlist').textContent=z.length?z.map(x=>x[1]+'   '+x[0]).join('\n'):'Belum ada.';
 }
 function ambil(){
-  if(!ada)return;
+  if(!ada){tampil({running:false,done:0,total:0,fase:'Siap',logs:[],zones:{}});return}
   try{tampil(JSON.parse(App.status()))}catch(e){}
 }
 function chip(id,ok,ya,tidak){const e=$(id);e.textContent=ok?ya:tidak;e.className='chip'+(ok?' ok':'')}
