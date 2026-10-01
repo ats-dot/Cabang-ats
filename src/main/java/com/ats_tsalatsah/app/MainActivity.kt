@@ -98,20 +98,18 @@ class MainActivity : Activity() {
             try {
                 val o = JSONObject(json)
                 val ps = o.getJSONArray("pkgs")
-                val zs = o.optJSONArray("zones")
                 if (ps.length() == 0) {
                     hasil = "Pilih aplikasi dulu"
                 } else if (RunnerState.running) {
                     hasil = "Masih berjalan"
                 } else {
                     val pk = Array(ps.length()) { ps.getString(it) }
-                    val zn = Array(ps.length()) { zs?.optString(it, "") ?: "" }
                     val i = Intent(this@MainActivity, RunnerService::class.java)
                     i.putExtra("pkgs", pk)
-                    i.putExtra("zones", zn)
-                    i.putExtra("d1", o.optLong("d1", 5000L))
-                    i.putExtra("d2", o.optLong("d2", 7000L))
+                    i.putExtra("d1", o.optLong("d1", 5520L))
+                    i.putExtra("d2", o.optLong("d2", 5300L))
                     i.putExtra("back", o.optBoolean("back", true))
+                    i.putExtra("target", o.optInt("target", 0))
                     startForegroundService(i)
                 }
             } catch (e: Exception) {
