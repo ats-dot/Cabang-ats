@@ -78,6 +78,10 @@ internal class Snap(val mtime: Long, val jumlah: Int, val zona: String?)
 
 class RunnerService : Service() {
 
+    private class Tunggu(val awal: Snap?) {
+        var cadangan: String? = null
+    }
+
     private val main = Handler(Looper.getMainLooper())
     private var fs: IFileService? = null
     private var args: Shizuku.UserServiceArgs? = null
@@ -90,6 +94,13 @@ class RunnerService : Service() {
     private val polaMtime = Regex("MTIME:(\\d+)")
     private val zonaAwal = 57092L
     private val jedaHome = 500L
+
+    private val menunggu = LinkedHashMap<String, Tunggu>()
+    private val pemilikZona = HashMap<String, String>()
+    private val zonaDari = HashMap<String, String>()
+    private val diterima = ArrayList<String>()
+    private var targetAktif = 0
+    private var putar = 0
 
     private val conn = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -127,6 +138,7 @@ class RunnerService : Service() {
             } catch (e: Throwable) {
                 RunnerState.log("Error: " + e.message)
             } finally {
+                bersihkanMenunggu(false)
                 pulihkanAnim()
                 RunnerState.running = false
                 if (RunnerState.fase.startsWith("Putaran")) RunnerState.fase = "Berhenti"
@@ -154,9 +166,12 @@ class RunnerService : Service() {
         matikanAnim()
 
         val dibuka = LinkedHashSet<String>()
-        val zona = HashMap<String, String>()
-        val dipakai = HashMap<String, String>()
-        val sisa = ArrayList<String>()
+        menunggu.clear()
+        pemilikZona.clear()
+        zonaDari.clear()
+        diterima.clear()
+        putar = 0
+        targetAktif = target
 
         RunnerState.fase = "Putaran 1"
         RunnerState.total = target
@@ -164,32 +179,37 @@ class RunnerService : Service() {
 
         for (pkg in pkgs) {
             if (RunnerState.stop) break
-            if (sisa.size >= target) break
+            if (diterima.size >= target) break
 
-            val z = cobaApk(pkg, d1, dipakai, dibuka)
+            val z = cobaApk(pkg, d1, dibuka)
             if (RunnerState.stop) break
 
             if (z != null) {
-                dipakai[z] = pkg
-                zona[pkg] = z
-                RunnerState.zona(pkg, z)
-                sisa.add(pkg)
-                RunnerState.done = sisa.size
-                RunnerState.log("$pkg : Zone ID $z (server ${sisa.size}/$target)")
+                if (diterima.size >= target) {
+                    RunnerState.log("$pkg : Zone ID $z, target sudah tercapai, ditutup")
+                    tutup(pkg)
+                } else {
+                    terima(pkg, z, "")
+                }
             }
         }
 
         if (!RunnerState.stop) {
-            if (sisa.size < target) {
-                RunnerState.log("Target $target, tercapai ${sisa.size}. Apk cadangan habis, lanjut ke putaran 2.")
-            }
-            infoBolong(zona, target)
+            periksaMenunggu(0, true)
+        }
+        bersihkanMenunggu(!RunnerState.stop)
 
-            val urut = sisa.sortedBy { zona[it]?.toLongOrNull() ?: Long.MAX_VALUE }
+        if (!RunnerState.stop) {
+            if (diterima.size < target) {
+                RunnerState.log("Target $target, tercapai ${diterima.size}. Apk cadangan habis, lanjut ke putaran 2.")
+            }
+            infoBolong(zonaDari, target)
+
+            val urut = diterima.sortedBy { zonaDari[it]?.toLongOrNull() ?: Long.MAX_VALUE }
             RunnerState.fase = "Putaran 2"
             RunnerState.total = urut.size
             RunnerState.done = 0
-            RunnerState.log("Urutan putaran 2: " + urut.joinToString(", ") { zona[it] ?: "?" })
+            RunnerState.log("Urutan putaran 2: " + urut.joinToString(", ") { zonaDari[it] ?: "?" })
 
             for ((i, pkg) in urut.withIndex()) {
                 if (RunnerState.stop) break
@@ -208,6 +228,73 @@ class RunnerService : Service() {
             if (kembali) kembaliKeAplikasi()
             tampilKapsul("Selesai · ${dibuka.size} app dibuka")
             tidur(2800)
+        }
+    }
+
+    private fun terima(pkg: String, z: String, ket: String) {
+        pemilikZona[z] = pkg
+        zonaDari[pkg] = z
+        RunnerState.zona(pkg, z)
+        diterima.add(pkg)
+        RunnerState.done = diterima.size
+        RunnerState.log("$pkg : Zone ID $z$ket (server ${diterima.size}/$targetAktif)")
+    }
+
+    private fun selesaiMenunggu(pkg: String, z: String) {
+        menunggu.remove(pkg)
+        val o = pemilikZona[z]
+        if (o != null && o != pkg) {
+            RunnerState.log("$pkg : Zone ID $z terbaca terlambat, kembar dengan $o, ditutup")
+            if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
+        } else if (diterima.size >= targetAktif) {
+            RunnerState.log("$pkg : Zone ID $z terbaca terlambat, target sudah tercapai, ditutup")
+            tutup(pkg)
+        } else {
+            terima(pkg, z, " terbaca terlambat")
+        }
+    }
+
+    private fun periksaMenunggu(maks: Int, akhir: Boolean) {
+        if (menunggu.isEmpty()) return
+        val daftar = menunggu.keys.toList()
+        val n = daftar.size
+        var dicek = 0
+        var k = 0
+        while (k < n) {
+            if (RunnerState.stop) return
+            if (!akhir && dicek >= maks) break
+            val pkg = daftar[(putar + k) % n]
+            k++
+            val m = menunggu[pkg] ?: continue
+            dicek++
+            val s = snap(pkg)
+            val zz = s?.zona
+            var baru: String? = null
+            if (s != null && zz != null) {
+                val a = m.awal
+                val adaBaru = a == null ||
+                    (s.mtime > a.mtime && (s.jumlah != a.jumlah || zz != a.zona))
+                if (adaBaru) {
+                    baru = zz
+                } else if (a != null && s.mtime > a.mtime) {
+                    m.cadangan = zz
+                }
+            }
+            if (baru == null && akhir) baru = m.cadangan
+            if (baru != null) selesaiMenunggu(pkg, baru)
+        }
+        putar = (putar + dicek) % n
+    }
+
+    private fun bersihkanMenunggu(catat: Boolean) {
+        if (menunggu.isEmpty()) return
+        val daftar = menunggu.keys.toList()
+        menunggu.clear()
+        for (pkg in daftar) {
+            if (catat) {
+                RunnerState.log("$pkg : Zone ID tidak terbaca sampai putaran 1 selesai, ditutup")
+            }
+            tutup(pkg)
         }
     }
 
@@ -249,7 +336,6 @@ class RunnerService : Service() {
     private fun cobaApk(
         pkg: String,
         d1: Long,
-        dipakai: Map<String, String>,
         dibuka: MutableSet<String>
     ): String? {
         if (RunnerState.stop) return null
@@ -273,7 +359,7 @@ class RunnerService : Service() {
                         (s.mtime > awal.mtime && (s.jumlah != awal.jumlah || zz != awal.zona))
                     if (baru) {
                         z = zz
-                        val o = dipakai[zz]
+                        val o = pemilikZona[zz]
                         if (o != null && o != pkg) break
                     } else if (awal != null && s.mtime > awal.mtime) {
                         cadangan = zz
@@ -281,24 +367,25 @@ class RunnerService : Service() {
                 }
             }
 
+            periksaMenunggu(2, false)
+
             if (!tidur(200)) return null
         }
 
         if (z == null) z = cadangan
 
-        val pemilik = if (z != null) dipakai[z] else null
+        val pemilik = if (z != null) pemilikZona[z] else null
         val gagal = z == null
         val kembar = pemilik != null && pemilik != pkg
 
         home()
 
-        if (gagal || kembar) {
-            if (gagal) {
-                RunnerState.log("$pkg : Zone ID tidak terbaca sampai jeda habis, ditutup")
-            } else {
-                RunnerState.log("$pkg : Zone ID $z kembar dengan $pemilik, ditutup")
-            }
+        if (kembar) {
+            RunnerState.log("$pkg : Zone ID $z kembar dengan $pemilik, ditutup")
             if (!tutup(pkg)) RunnerState.log("Tidak bisa menutup $pkg")
+        } else if (gagal) {
+            menunggu[pkg] = Tunggu(awal)
+            RunnerState.log("$pkg : Zone ID belum terbaca sampai jeda habis, dibiarkan menunggu di latar belakang")
         }
 
         if (!tidur(jedaHome)) return null
